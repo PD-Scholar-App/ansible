@@ -1,0 +1,67 @@
+---
+- name: Run Docker containers for Schoolar application
+  hosts: all
+  become: true
+
+  tasks:
+  - name: Run MySQL database container
+    docker_container:
+      name: mysql_db
+      image: mysql:8.0
+      env:
+        MYSQL_ROOT_PASSWORD: root
+      ports:
+        - "3306:3306"
+      volumes:
+        - name: dbdata
+          host_path: /var/lib/mysql
+          volume_mode: bind  # Added volume_mode parameter
+      state: started
+      restart: true
+
+  - name: Wait for database to be ready
+    wait_for:
+      port: 3306
+
+  - name: Run Schoolar backend container with host network
+    docker_container: # Add the missing key here
+      name: backend
+      image: a2022113664/schoolar-backend:latest
+      network_mode: host
+      state: started
+      restart: true
+
+  - name: Wait for backend to be ready
+    wait_for:
+      port: 80
+
+  - name: Create database
+    command: docker exec backend bash -c "php artisan migrate --force"
+
+  - name: Seed database
+    command: docker exec backend bash -c "php artisan migrate:fresh --seed"
+
+  - name: Run Schoolar frontend container
+    docker_container: # Add the missing key here
+      name: frontend
+      image: a2022113664/schoolar-frontend:latest
+      ports:
+        - "8000:80"
+      state: started
+      restart: true
+
+  handlers:
+    - name: Ensure MySQL container is running
+      service:
+        name: mysql_db
+        state: started
+
+    - name: Ensure backend container is running
+      service:
+        name: backend
+        state: started
+
+    - name: Ensure frontend container is running
+      service:
+        name: frontend
+        state: started
